@@ -5,12 +5,49 @@ from decimal import *
 
 
 # Helper for quering DynamoDB table
-def dynamo_request(table_obj, key_name, key_value):
-    resp = table_obj.get_item(Key={key_name: key_value})
+def dynamo_request(table_obj, request_dict):
+    resp = table_obj.get_item(Key=request_dict)
     if resp.has_key('Item') and resp['Item']:
         return resp['Item']
     else:
         return None
+
+
+# Helper for put new item to DynamoDB table
+def dynamo_put(table_obj, item_dict):
+    try:
+        resp = table_obj.put_item(Item=item_dict)
+        if resp:
+            if resp['ResponseMetadata']['HTTPStatusCode'] != 200:
+                return None
+    except:
+        return None
+    return True
+
+
+# Helper for updating item in DynamoDB table
+def dynamo_update(table_obj, request_dict, value_dict):
+    resp = table_obj.get_item(Key=request_dict)
+    if resp.has_key('Item') and resp['Item']:
+        item = resp['Item']
+        for key in value_dict.keys():
+            item[key] = value_dict[key]
+        try:
+            resp = table_obj.put_item(Item=item)
+            if resp:
+                if resp['ResponseMetadata']['HTTPStatusCode'] != 200:
+                    return None
+        except:
+            return None
+
+    else:
+        return None
+
+    return True
+
+# Constance for gamification
+NEW_SQUARE = 10
+NEW_POI = 20
 
 # Constance for calculating of grid
 LAT_SHIFT = Decimal("0.001")
@@ -39,6 +76,11 @@ def calculate_grid(id):
     return (lat, lon)
 
 
+# Dummy function, in future filtration of abuse usage
+def filter(user, square_id):
+    return True
+
+
 def lambda_handler(event, context):
     '''Provide an event that contains the following keys:
 
@@ -51,19 +93,36 @@ def lambda_handler(event, context):
 
     dyn_users = boto3.resource('dynamodb').Table('mapexplorer-users')
     dyn_history = boto3.resource('dynamodb').Table('mapexplorer-history')
+    dyn_grid = boto3.resource('dynamodb').Table('mapexplorer-grid')
 
-    user = dynamo_request(dyn_users, 'id', event['id'])
+    user = dynamo_request(dyn_users, {'id': event['id']})
     if user:
         if user['token'] == event['token']:
-            try:
-                resp = dyn_history.put_item(Item={'id': event['id'],
-                                                  'lat': Decimal(str(event['lat'])),
-                                                  'lon': Decimal(str(event['lon'])),
-                                                  'timestamp': event['timestamp']})
-                if resp:
-                    if resp['ResponseMetadata']['HTTPStatusCode'] != 200:
-                        raise Exception("Error: Error adding new item to history")
-            except:
+            update_resp = dynamo_put(dyn_history, {'id': event['id'],
+                                                   'lat': Decimal(str(event['lat'])),
+                                                   'lon': Decimal(str(event['lon'])),
+                                                   'timestamp': event['timestamp']})
+            if not update_resp:
                 raise Exception("Error: Error adding new item to history")
+
+            grid_lat, grid_lon = calculate_sqare(event['lat'], event['lon'])
+            square_id = calculate_id(grid_lat, grid_lon)
+
+            if filter(user, square_id):
+                if square_id != user['lastLocation']:
+                    # request and update grid table
+                    grid_resp = dynamo_request(dyn_grid, {'squareId': square_id, 'userId': user['id']})
+                    if grid_resp:
+                        # user was here, update
+                        dynamo_update(dyn_grid, {'squareId': square_id,
+                                                 'userId': user['id']}, {'heat': grid_resp['heat'] + 1})
+
+                        return {'xp': 0}
+                    else:
+                        #new location add to grid, xp +10
+                        dynamo_put(dyn_grid, {'squareId': square_id, 'userId': user['id'], 'heat': 1})
+                        return {'xp': NEW_SQUARE}
+                else:
+                    return {'xp': 0}
     else:
         raise Exception("Not Found: User not found")
