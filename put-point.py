@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import boto3
+from boto3.dynamodb.conditions import Key, Attr
 from decimal import *
 
 
@@ -94,6 +95,7 @@ def lambda_handler(event, context):
     dyn_users = boto3.resource('dynamodb').Table('mapexplorer-users')
     dyn_history = boto3.resource('dynamodb').Table('mapexplorer-history')
     dyn_grid = boto3.resource('dynamodb').Table('mapexplorer-grid')
+    dyn_poi = boto3.resource('dynamodb').Table('mapexplorer-poi')
 
     user = dynamo_request(dyn_users, {'id': event['id']})
     if user:
@@ -119,16 +121,25 @@ def lambda_handler(event, context):
                         if not update_resp:
                             raise Exception("Bad Request: Error updating square")
 
-                        return {'xp': 0}
+                        return {'xp_square': 0, 'xp_poi': 0}
                     else:
                         #new location add to grid, xp +10
                         put_resp = dynamo_put(dyn_grid, {'squareId': square_id, 'userId': user['id'], 'heat': 1})
                         if not put_resp:
                             raise Exception("Bad Request: Error adding new square")
 
-                        return {'xp': NEW_SQUARE}
+                        resp = dyn_poi.query(KeyConditionExpression=Key('squareId').eq(square_id))
+                        num_poi = 0
+                        if resp.has_key('Items') and resp['Items']:
+                            num_poi = len(resp['Items'])
+
+                        # Update XP in DynamoDB
+                        new_xp = user['xp'] + NEW_SQUARE + NEW_POI * num_poi
+                        update_xp = dynamo_update(dyn_users, {'id': user['id']}, {'xp': new_xp})
+
+                        return {'xp_square': NEW_SQUARE, 'xp_poi': NEW_POI * num_poi, 'square_id': square_id}
                 else:
-                    return {'xp': 0}
+                    return {'xp_square': 0, 'xp_poi': 0}
         else:
             raise Exception("Unauthorized: Wrong token")
     else:

@@ -96,31 +96,28 @@ def lambda_handler(event, context):
 
       - token: user token
       - id: user id
-      - user_id: which user data has to be returned
-      - heat: return heat data
+      - lat: lat of user
+      - lon: lon of user
     '''
 
     dyn_users = boto3.resource('dynamodb').Table('mapexplorer-users')
     dyn_grid = boto3.resource('dynamodb').Table('mapexplorer-grid')
+    dyn_poi = boto3.resource('dynamodb').Table('mapexplorer-poi')
 
     user = dynamo_request(dyn_users, {'id': event['id']})
     if user:
         if user['token'] == event['token']:
             answer = []
-            show_heat = False
-            if event.has_key('heat') and event['heat']:
-                show_heat = True
-            resp = dyn_grid.query(KeyConditionExpression=Key('userId').eq(event['user_id']))
+            resp = dyn_poi.scan()
             if resp.has_key('Items'):
                 for i in resp['Items']:
-                    lat, lon = calculate_grid(i['squareId'])
-                    rec = {'lat': lat, 'lon': lon, 'square_id': i['squareId']}
-                    if show_heat:
-                        rec['heat'] = i['heat']
+                    rec = {'lat': i['lat'], 'lon': i['lon'], 'name': i['name']}
+                    if dynamo_request(dyn_grid, {'userId': event['id'], 'squareId': i['squareId']}):
+                        rec['info'] = i['info']
                     answer.append(rec)
                 return answer
             else:
-                raise Exception("Bad Request: Error quering grid data")
+                raise Exception("Bad Request: Error quering POI data")
 
         else:
             raise Exception("Unauthorized: Wrong token")
