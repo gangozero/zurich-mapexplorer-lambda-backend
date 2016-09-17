@@ -129,5 +129,7 @@ def lambda_handler(event, context):
                         return {'xp': NEW_SQUARE}
                 else:
                     return {'xp': 0}
+        else:
+            raise Exception("Unauthorized: Wrong token")
     else:
         raise Exception("Not Found: User not found")
