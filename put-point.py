@@ -103,7 +103,7 @@ def lambda_handler(event, context):
                                                    'lon': Decimal(str(event['lon'])),
                                                    'timestamp': event['timestamp']})
             if not update_resp:
-                raise Exception("Error: Error adding new item to history")
+                raise Exception("Bad Request: Error adding new item to history")
 
             grid_lat, grid_lon = calculate_sqare(event['lat'], event['lon'])
             square_id = calculate_id(grid_lat, grid_lon)
@@ -114,13 +114,18 @@ def lambda_handler(event, context):
                     grid_resp = dynamo_request(dyn_grid, {'squareId': square_id, 'userId': user['id']})
                     if grid_resp:
                         # user was here, update
-                        dynamo_update(dyn_grid, {'squareId': square_id,
-                                                 'userId': user['id']}, {'heat': grid_resp['heat'] + 1})
+                        update_resp = dynamo_update(dyn_grid, {'squareId': square_id,
+                                                               'userId': user['id']}, {'heat': grid_resp['heat'] + 1})
+                        if not update_resp:
+                            raise Exception("Bad Request: Error updating square")
 
                         return {'xp': 0}
                     else:
                         #new location add to grid, xp +10
-                        dynamo_put(dyn_grid, {'squareId': square_id, 'userId': user['id'], 'heat': 1})
+                        put_resp = dynamo_put(dyn_grid, {'squareId': square_id, 'userId': user['id'], 'heat': 1})
+                        if not put_resp:
+                            raise Exception("Bad Request: Error adding new square")
+
                         return {'xp': NEW_SQUARE}
                 else:
                     return {'xp': 0}
