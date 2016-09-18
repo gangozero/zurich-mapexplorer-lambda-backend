@@ -133,8 +133,12 @@ def lambda_handler(event, context):
                         if resp.has_key('Items') and resp['Items']:
                             num_poi = len(resp['Items'])
 
+                        coef = 1
+                        if user['fitbitVerified']:
+                            coef = 1.1
+
                         # Update XP in DynamoDB
-                        new_xp = user['xp'] + NEW_SQUARE + NEW_POI * num_poi
+                        new_xp = user['xp'] + int(NEW_SQUARE * coef) + NEW_POI * num_poi
                         update_xp = dynamo_update(dyn_users, {'id': user['id']}, {'xp': new_xp})
 
                         return {'xp_square': NEW_SQUARE, 'xp_poi': NEW_POI * num_poi, 'square_id': square_id}
